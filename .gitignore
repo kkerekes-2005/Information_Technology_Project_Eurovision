@@ -13,5 +13,3 @@ __pycache__/
 .vscode/
 .DS_Store
 
-# working notes, not part of the submission
-project-memory/
