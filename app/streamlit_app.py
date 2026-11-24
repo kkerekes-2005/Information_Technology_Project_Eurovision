@@ -159,7 +159,8 @@ def new_figure(height=4.0):
 
 
 def finish(fig, ax, xlabel, ylabel, value_axis="y"):
-    ax.set_xlabel(xlabel, color=INK_2, fontsize=10)
+    if xlabel == "Year":
+        ax.set_xlabel(xlabel, color=INK_2, fontsize=10)
     ax.set_ylabel(ylabel, color=INK_2, fontsize=10)
     ax.grid(axis=value_axis, color=GRID, linewidth=0.8)
     fig.tight_layout()
