@@ -37,7 +37,7 @@ License of the dataset: Creative Commons Attribution 4.0 International (CC BY 4.
 
 - PostgreSQL 16 and pgAdmin 4
 - Python 3.10 or later
-- Python packages: `psycopg2-binary`, `sqlalchemy`, `matplotlib`, `streamlit`
+- Python packages: `psycopg2-binary`, `sqlalchemy`, `matplotlib`, `streamlit` (Altair, used for the Q07 chart, is installed with Streamlit)
 
 The cleaning step uses only the Python standard library.
 

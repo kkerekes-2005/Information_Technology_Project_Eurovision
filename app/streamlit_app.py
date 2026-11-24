@@ -13,6 +13,7 @@ The look of the page is in app/style.py.
 import sys
 from pathlib import Path
 
+import altair as alt
 import matplotlib.pyplot as plt
 import streamlit as st
 from matplotlib.ticker import MaxNLocator
@@ -96,6 +97,52 @@ def ordinal(n):
     """1 -> 1st, 2 -> 2nd, 3 -> 3rd, 11 -> 11th."""
     suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suffix}"
+
+
+def agreement_chart(rows):
+    """Q07: public rank against jury rank, one dot per entry, details on hover.
+
+    Altair (installed with Streamlit) is used here instead of matplotlib because a
+    matplotlib figure is a still image and cannot show a tooltip.
+    """
+    groups = [("Public ranked it higher", SERIES[0]),
+              ("Juries ranked it higher", SERIES[2]),
+              (f"Both agree (within {AGREE_GAP} places)", MUTED)]
+    points = []
+    for r in rows:
+        gap = r["public_favoured_by"]  # jury_rank - tele_rank, computed in the query
+        group = groups[0][0] if gap > AGREE_GAP else groups[1][0] if gap < -AGREE_GAP \
+            else groups[2][0]
+        points.append({"country": r["country"], "year": int(r["year"]),
+                       "performer": r["performer"], "tele_rank": int(r["tele_rank"]),
+                       "jury_rank": int(r["jury_rank"]), "group": group})
+    top = max([p["tele_rank"] for p in points] + [p["jury_rank"] for p in points] + [10])
+    scale = alt.Scale(domain=[top + 1, 0], nice=False)
+    ticks = [1] + list(range(5, top + 1, 5))
+    x = alt.X("tele_rank:Q", title="Rank with the public (televote), 1 = most points",
+              scale=scale, axis=alt.Axis(values=ticks))
+    y = alt.Y("jury_rank:Q", title="Rank with the juries, 1 = most points",
+              scale=alt.Scale(domain=[top + 1, 0], nice=False), axis=alt.Axis(values=ticks))
+    diagonal = alt.Chart(alt.Data(values=[{"tele_rank": 1, "jury_rank": 1},
+                                          {"tele_rank": top, "jury_rank": top}])).mark_line(
+        color=MUTED, strokeDash=[5, 4], strokeWidth=1).encode(x=x, y=y)
+    dots = alt.Chart(alt.Data(values=points)).mark_circle(
+        size=80, opacity=1, stroke=CARD, strokeWidth=1.5).encode(
+        x=x, y=y,
+        color=alt.Color("group:N", title=None,
+                        scale=alt.Scale(domain=[g for g, _ in groups],
+                                        range=[c for _, c in groups]),
+                        legend=alt.Legend(orient="bottom", direction="horizontal")),
+        tooltip=[alt.Tooltip("country:N", title="Country"),
+                 alt.Tooltip("year:Q", title="Year", format="d"),
+                 alt.Tooltip("performer:N", title="Performer"),
+                 alt.Tooltip("tele_rank:Q", title="Rank with the public"),
+                 alt.Tooltip("jury_rank:Q", title="Rank with the juries")])
+    return (diagonal + dots).properties(height=460, background=CARD).configure_view(
+        stroke=None).configure_axis(
+        labelColor=INK_2, titleColor=INK_2, gridColor=GRID, domainColor=MUTED,
+        tickColor=MUTED, labelFontSize=11, titleFontSize=12, titleFontWeight="normal").configure_legend(
+        labelColor=INK, labelFontSize=12, symbolType="circle", symbolSize=90)
 
 
 def new_figure(height=4.0):
@@ -317,9 +364,9 @@ with tab_juries:
     with st.container(border=True, key="card_q07"):
         style.section("Q07", "Did the public and the juries agree?",
                       "Rank with the public against rank with the juries, finals since 2016",
-                      f"Each dot is one entry in one final. Colour shows who ranked it higher; "
-                      f"grey means the two ranks are at most {AGREE_GAP} places apart. "
-                      "The biggest disagreements are named.")
+                      f"Each dot is one entry in one final; point at a dot to see which. "
+                      f"Colour shows who ranked it higher; grey means the two ranks are at most "
+                      f"{AGREE_GAP} places apart.")
         c1, c2 = st.columns([3, 1])
         with c1:
             year_from, year_to = year_range("q07_years", 2016, LAST_YEAR, 2016, LAST_YEAR)
@@ -329,46 +376,7 @@ with tab_juries:
         rows = fetch("q07_jury_vs_televote", {"year_from": year_from, "year_to": year_to,
                                               "min_gap": min_gap})
         if has_rows(rows):
-            fig, ax = new_figure(height=5.5)
-            top = max(max(r["tele_rank"] for r in rows), max(r["jury_rank"] for r in rows), 10)
-            ax.plot([1, top], [1, top], color=MUTED, linewidth=1, linestyle="--", zorder=1)
-            # public_favoured_by = jury_rank - tele_rank, computed in the query
-            groups = [
-                ("Public ranked it higher", SERIES[0],
-                 [r for r in rows if r["public_favoured_by"] > AGREE_GAP]),
-                ("Juries ranked it higher", SERIES[2],
-                 [r for r in rows if r["public_favoured_by"] < -AGREE_GAP]),
-                (f"Both agree (within {AGREE_GAP} places)", MUTED,
-                 [r for r in rows if abs(r["public_favoured_by"]) <= AGREE_GAP]),
-            ]
-            for label, colour, group in groups:
-                if group:
-                    ax.scatter([r["tele_rank"] for r in group], [r["jury_rank"] for r in group],
-                               s=46, color=colour, edgecolors=CARD, linewidths=1.5, zorder=3,
-                               label=f"{label} ({len(group)})")
-            biggest = sorted(rows, key=lambda r: abs(r["public_favoured_by"]), reverse=True)[:5]
-            for r in biggest:
-                if abs(r["public_favoured_by"]) > AGREE_GAP:
-                    ax.annotate(f"{r['country']} {r['year']}", (r["tele_rank"], r["jury_rank"]),
-                                xytext=(6, 4), textcoords="offset points", fontsize=8, color=INK)
-            # extra room beyond rank 1 and the last rank keeps the corner labels off the dots
-            ax.set_xlim(top + 1, -3)
-            ax.set_ylim(top + 3, -2)
-            ticks = [1] + list(range(5, top + 1, 5))
-            ax.set_xticks(ticks)
-            ax.set_yticks(ticks)
-            for x, y, text, ha, va in [(0.98, 0.98, "Both liked it", "right", "top"),
-                                       (0.02, 0.02, "Neither liked it", "left", "bottom"),
-                                       (0.02, 0.98, "Juries' favourite", "left", "top"),
-                                       (0.98, 0.02, "Public's favourite", "right", "bottom")]:
-                ax.text(x, y, text, transform=ax.transAxes, ha=ha, va=va, fontsize=9,
-                        color=MUTED, style="italic")
-            legend = ax.legend(frameon=False, fontsize=9, loc="upper center",
-                               bbox_to_anchor=(0.5, -0.13), ncol=3)
-            for text in legend.get_texts():
-                text.set_color(INK)
-            finish(fig, ax, "Rank with the public (televote), 1 = most points",
-                   "Rank with the juries, 1 = most points", value_axis="both")
+            st.altair_chart(agreement_chart(rows), width="stretch", theme=None)
             show_source("q07_jury_vs_televote", rows)
 
     with st.container(border=True, key="card_q11"):

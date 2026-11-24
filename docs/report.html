@@ -264,7 +264,7 @@ figcaption { font-size: 8pt; color: #555; margin-top: 2pt; }
 </ol>
 <h1>4. Implementation</h1>
 <h2>4.1 Order of execution</h2>
-<p><code>scripts/download_data.py</code> → create the database in pgAdmin → <code>sql/schema.sql</code> → <code>python src/etl/load.py</code> → <code>sql/verify_constraints.sql</code> and <code>sql/indexes.sql</code> → <code>scripts/run_queries.py</code> → <code>streamlit run app/streamlit_app.py</code>. Tools: PostgreSQL 18, pgAdmin 4, Python with psycopg2, SQLAlchemy Core, matplotlib and Streamlit.</p>
+<p><code>scripts/download_data.py</code> → create the database in pgAdmin → <code>sql/schema.sql</code> → <code>python src/etl/load.py</code> → <code>sql/verify_constraints.sql</code> and <code>sql/indexes.sql</code> → <code>scripts/run_queries.py</code> → <code>streamlit run app/streamlit_app.py</code>. Tools: PostgreSQL 18, pgAdmin 4, Python with psycopg2, SQLAlchemy Core, matplotlib, Altair and Streamlit.</p>
 <h2>4.2 Schema</h2>
 <p>The schema is created first; the load only inserts rows. Types follow the profile: years, places and points <code>SMALLINT</code> (maximum 758), country codes <code>VARCHAR(3)</code> (because of <code>wld</code>), text sizes above the longest value found, odds <code>NUMERIC(7,2)</code>, lyrics <code>TEXT</code>.</p>
 <pre><code class="language-sql">CREATE TABLE country (
@@ -1214,7 +1214,7 @@ ORDER BY decade;
 <h1>6. Visualization</h1>
 <p>The application (<code>app/streamlit_app.py</code>, look in <code>app/style.py</code>) has five tabs with eight charts and five tables. It connects through <code>src/db.py</code>, whose <code>run_query(sql, params)</code> sends a query file with SQLAlchemy <code>text()</code> and bound parameters and returns the rows.</p>
 <ul>
-<li><strong>Charts use only SQL results:</strong> each chart draws the returned rows in their order; a chart with several countries (Q09) runs its query once per country. A <em>Data and SQL</em> panel under each chart and table shows the rows and the query.</li>
+<li><strong>Charts use only SQL results:</strong> each chart draws the returned rows in their order; a chart with several countries (Q09) runs its query once per country. A <em>Data and SQL</em> panel under each chart and table shows the rows and the query. Charts are drawn with matplotlib, except Q07, which uses Altair (installed with Streamlit) so that pointing at a dot shows its country, year and both ranks.</li>
 <li><strong>Filters are parameters:</strong> sliders, menus and number boxes send their values as bound parameters; menus and limits come from queries in <code>sql/app/</code>.</li>
 <li><strong>No crashes:</strong> inputs have fixed limits; every query runs inside <code>fetch()</code>, which shows a message on error; empty results are explained.</li>
 <li><strong>No SQL injection:</strong> the only free text, the lyrics search, is sent as a LIKE parameter with <code>%</code> and <code>_</code> escaped.</li>
