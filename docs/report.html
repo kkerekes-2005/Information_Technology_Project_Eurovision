@@ -1,0 +1,1309 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Eurovision Explorer: Project B report</title><style>
+@page { size: A4; }
+body { font-family: 'Inter', Arial, sans-serif; font-size: 9.5pt; line-height: 1.45; color: #222; }
+.titleblock { margin-bottom: 14pt; padding-bottom: 8pt; border-bottom: 1.5pt solid #c21bbb; }
+.t1 { font-family: 'Sora', Arial, sans-serif; font-size: 22pt; font-weight: 600; color: #6a1fb0; }
+.t2 { font-size: 10pt; color: #555; margin-top: 2pt; }
+h1 { font-family: 'Sora', Arial, sans-serif; font-size: 15pt; color: #6a1fb0; margin: 18pt 0 6pt;
+     page-break-after: avoid; }
+h2 { font-size: 11pt; margin: 12pt 0 4pt; color: #222; page-break-after: avoid; }
+table { border-collapse: collapse; width: 100%; margin: 4pt 0 8pt; font-size: 8.5pt; }
+th { background: #f3eef6; text-align: left; padding: 3pt 5pt; border-bottom: 1pt solid #cbbfd3; }
+td { border-bottom: 0.5pt solid #e2dbe6; padding: 3pt 5pt; vertical-align: top; }
+tr { page-break-inside: avoid; }
+code { font-family: 'DejaVu Sans Mono', monospace; font-size: 8pt; }
+pre { background: #f7f5f8; border: 0.5pt solid #e2dbe6; padding: 6pt 8pt; font-size: 7.6pt;
+      line-height: 1.3; white-space: pre-wrap; }
+ul { margin: 4pt 0; padding-left: 16pt; }
+li { margin-bottom: 2pt; }
+figure { margin: 6pt 0 10pt; page-break-inside: avoid; }
+figure img { max-width: 100%; }
+figure img.wide { width: 100%; }
+figcaption { font-size: 8pt; color: #555; margin-top: 2pt; }
+.grid { display: flex; flex-wrap: wrap; gap: 10pt; }
+.grid figure { width: calc(50% - 5pt); margin: 0; }
+.grid figure img { max-height: 95mm; max-width: 100%; display: block; }
+</style></head><body><div class="titleblock">
+<div class="t1">Eurovision Explorer</div>
+<div class="t2">Project B report · Information Technology · Kinga Kerekes · 25 November 2026</div>
+</div>
+
+<h1>1. Introduction</h1>
+<p><strong>Domain.</strong> The Eurovision Song Contest is a yearly song competition between mostly European countries, held since 1956. Since 2004 most countries must pass a semi-final; the final is decided by the points the countries give each other, from juries, from the public, or since 2016 from both counted separately. Bookmakers publish odds before each show.</p>
+<p>I turned a public dataset of the contest into a normalised PostgreSQL database, loaded it from Python in one transaction, answered questions about it in SQL and presented the answers in a Streamlit application. All analysis is done in SQL; Python only cleans the raw files during the load and passes query results to the charts.</p>
+<p><strong>Questions the database answers.</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Question</th>
+<th>#</th>
+<th>Question</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Q01</td>
+<td>Which countries won most often, and when last?</td>
+<td>Q08</td>
+<td>Which countries never appeared in a final?</td>
+</tr>
+<tr>
+<td>Q02</td>
+<td>Best average place in the final, among countries with many finals?</td>
+<td>Q09</td>
+<td>How did top finishes accumulate over time?</td>
+</tr>
+<tr>
+<td>Q03</td>
+<td>Which countries took part but never won?</td>
+<td>Q10</td>
+<td>Is the running order related to the result?</td>
+</tr>
+<tr>
+<td>Q04</td>
+<td>Which countries give a chosen country the most points?</td>
+<td>Q11</td>
+<td>Where did the bookmakers' favourites finish?</td>
+</tr>
+<tr>
+<td>Q05</td>
+<td>How did a country's final place change over time?</td>
+<td>Q12</td>
+<td>Which composers wrote the most entries?</td>
+</tr>
+<tr>
+<td>Q06</td>
+<td>Which pairs give each other high points both ways?</td>
+<td>Q13</td>
+<td>How is a contest added so that all rows are saved or none?</td>
+</tr>
+<tr>
+<td>Q07</td>
+<td>Where did the public and the juries disagree most?</td>
+<td>Q14</td>
+<td>In which decades do lyrics most often contain a given word?</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Data sources and licences.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Used for</th>
+<th>Licence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Spijkervet, J. <em>The Eurovision Dataset</em>, release <code>2023</code>, github.com/Spijkervet/eurovision-dataset, DOI 10.5281/zenodo.4036457</td>
+<td><code>contestants.csv</code>, <code>votes.csv</code>, <code>betting_offices.csv</code></td>
+<td>CC BY 4.0 (Zenodo record)</td>
+</tr>
+<tr>
+<td>eurovisionworld.com, 2024 results</td>
+<td>Four example values in Q13, inserted and deleted again</td>
+<td>Cited as source</td>
+</tr>
+</tbody>
+</table>
+<p>The dataset is real and open, relational (the three files share year and country), supports ten tables, and its largest table, <code>vote</code>, has 51,354 rows. The raw files are downloaded by <code>scripts/download_data.py</code> and are not committed.</p>
+<h1>2. Data profile</h1>
+<p>The raw files were loaded unchanged into all-text tables in a <code>staging</code> schema and profiled only with SQL: 40 queries in <code>sql/profiling.sql</code>, referred to as P01 to P40.</p>
+<h2>2.1 Files and candidate keys</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Rows (P01)</th>
+<th>Candidate key</th>
+<th>Unique?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>contestants.csv</code></td>
+<td>1,734</td>
+<td>year, to_country_id</td>
+<td>No: 20 repeated pairs (P06)</td>
+</tr>
+<tr>
+<td><code>votes.csv</code></td>
+<td>51,354</td>
+<td>year, round, from_country_id, to_country_id</td>
+<td>Yes (P05)</td>
+</tr>
+<tr>
+<td><code>betting_offices.csv</code></td>
+<td>9,453</td>
+<td>betting_bm_id, year, page_url, contest_round</td>
+<td>Yes (P08)</td>
+</tr>
+</tbody>
+</table>
+<p>Of the 20 repeated pairs, 5 are in 1956, when each country sent two songs, and 15 are 2023 entries written on two rows, one for the semi-final and one for the final (P07).</p>
+<h2>2.2 Nulls, ranges and formats</h2>
+<ul>
+<li><strong>contestants</strong> (P02): <code>song</code> is empty in 3 rows, <code>place_contest</code> in 56, <code>composers</code> in 54, <code>lyricists</code> in 749, <code>lyrics</code> and <code>youtube_url</code> in 12. Final columns are empty for entries that did not reach the final (about 340 rows), semi-final columns for entries without a semi-final (1,129 rows), televote and jury columns before 2016 (over 1,500 rows).</li>
+<li><strong>votes</strong> (P03): <code>tele_points</code> and <code>jury_points</code> are empty in about 77% of the rows; they exist only from 2016 (P25). All other columns are complete.</li>
+<li><strong>betting_offices</strong> (P04): <code>betting_score</code> is empty in 46 rows, the country in 324.</li>
+<li><strong>Ranges</strong> (P19 to P22): contestants 1956 to 2023, votes 1957 to 2023, odds 2015 to 2023; final places 1 to 27; final points 0 to 758; one vote 0 to 24 points; odds 1.0 to 1001.0; longest performer 46, song 47, country name 26 characters.</li>
+<li><strong>Formats</strong> (P12 to P15): integers written as decimals (<code>27.0</code>); four round labels (<code>final</code>, <code>semi-final</code>, <code>semi-final-1</code>, <code>semi-final-2</code>); <code>sf_num</code> 0, 1 or 2.</li>
+</ul>
+<h2>2.3 Findings and cleaning rules</h2>
+<p>The cleaning step <code>src/etl/clean.py</code> applies these rules while reading the files and counts the rows each one affects (<code>docs/cleaning-log.md</code>). Missing values stay NULL; no value is invented.</p>
+<table>
+<thead>
+<tr>
+<th>Finding (query)</th>
+<th>Rule</th>
+<th>Affected</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Country "code" is a full country name (P09, P10)</td>
+<td>R4: name replaced by its code, so the column can be a foreign key</td>
+<td>259 rows</td>
+</tr>
+<tr>
+<td>One code written with two names, e.g. Czech Republic and Czechia (P11)</td>
+<td>R5: one name per code</td>
+<td>11 rows</td>
+</tr>
+<tr>
+<td><code>ad</code> and <code>wld</code> used in votes but never as a code in contestants (P30)</td>
+<td>R6: both countries added</td>
+<td>2 countries</td>
+</tr>
+<tr>
+<td>Votes of a country for itself, all with 0 points (P23)</td>
+<td>R7: kept as delivered; a CHECK allows them only with 0 points and the vote queries exclude them in SQL, so nothing is filtered in Python</td>
+<td>1,975 rows kept</td>
+</tr>
+<tr>
+<td><code>from_country</code>, <code>to_country</code> repeat the code columns (P24)</td>
+<td>R8: not loaded</td>
+<td>51,354 rows</td>
+</tr>
+<tr>
+<td>2023 entries split over two rows (P06, P07)</td>
+<td>R9: merged into one entry with one result per round</td>
+<td>15 rows</td>
+</tr>
+<tr>
+<td>Several composers or lyricists in one cell (P16)</td>
+<td>R10: split into one credit per person</td>
+<td>815 lists</td>
+</tr>
+<tr>
+<td>Lyrics contain the characters <code>\n</code> (P17)</td>
+<td>R11: replaced by line breaks</td>
+<td>1,722 rows</td>
+</tr>
+<tr>
+<td><code>sf_num</code> 0, 1, 2 (P15)</td>
+<td>R12: mapped to the round labels of votes</td>
+<td>640 rows</td>
+</tr>
+<tr>
+<td>Integers written as <code>27.0</code> (P12, P13)</td>
+<td>R2: converted to integers</td>
+<td>5,687 cells</td>
+</tr>
+<tr>
+<td>Betting rows do not match by performer and song (P36)</td>
+<td>R13: matched through the year and the country in <code>page_url</code></td>
+<td>7,895 rows</td>
+</tr>
+<tr>
+<td>2020 odds identical under three round labels (P37, P38)</td>
+<td>R14: loaded once</td>
+<td>1,558 rows not loaded</td>
+</tr>
+<tr>
+<td>Every 1956 entry has place 2, the winner included (P31)</td>
+<td>R15: 1956 places set to NULL</td>
+<td>12 entries</td>
+</tr>
+<tr>
+<td>Empty cells</td>
+<td>R1: stored as NULL</td>
+<td>91,837 cells</td>
+</tr>
+</tbody>
+</table>
+<p>The load reconciles with the input: 1,734 contestant rows less 15 merged rows give 1,719 entries; all 51,354 votes are loaded; 9,453 betting rows less 1,558 repeats give 7,895 odds. Two consistency checks passed: where televote and jury points exist, the total is their sum (P26), and the final points of each entry equal the votes it received (P33).</p>
+<h1>3. Design</h1>
+<h2>3.1 ER diagram</h2>
+<figure><img alt="Entity-relationship diagram" class="wide" src="er-conceptual.png" /><figcaption>Entity-relationship diagram</figcaption></figure>
+<h2>3.2 Relational model</h2>
+<p>Primary keys in <strong>bold</strong>, foreign keys in <em>italics</em> with the table they refer to.</p>
+<ul>
+<li>COUNTRY (<strong>country_code</strong>, name)</li>
+<li>CONTEST (<strong>year</strong>)</li>
+<li>ROUND (<strong>round_id</strong>, <em>year</em> → CONTEST, round_type)</li>
+<li>SONG_ENTRY (<strong>entry_id</strong>, <em>year</em> → CONTEST, <em>country_code</em> → COUNTRY, performer, song, place_contest, youtube_url, lyrics)</li>
+<li>PERFORMANCE (<strong><em>entry_id</em></strong> → SONG_ENTRY, <strong><em>round_id</em></strong> → ROUND, running_order, place, points, points_tele, points_jury)</li>
+<li>VOTE (<strong><em>round_id</em></strong> → ROUND, <strong><em>from_country</em></strong> → COUNTRY, <strong><em>to_country</em></strong> → COUNTRY, total_points, tele_points, jury_points)</li>
+<li>PERSON (<strong>person_id</strong>, name)</li>
+<li>ENTRY_CREDIT (<strong><em>entry_id</em></strong> → SONG_ENTRY, <strong><em>person_id</em></strong> → PERSON, <strong>role</strong>)</li>
+<li>BOOKMAKER (<strong>bookmaker_id</strong>, name)</li>
+<li>BETTING_ODDS (<strong><em>bookmaker_id</em></strong> → BOOKMAKER, <strong><em>entry_id</em></strong> → SONG_ENTRY, <strong><em>round_id</em></strong> → ROUND, odds)</li>
+</ul>
+<p>Each entity became a table. The 1:N relationships became foreign keys on the N side; the N:N (many-to-many) relationships (performs in, is credited on) and the three-way relationships (votes for, quotes odds for) became tables whose primary key combines the keys they link. All tables are in third normal form; the source files were not (repeated country names, final and semi-final as two groups of columns, lists in one cell).</p>
+<h2>3.3 Justified exceptions</h2>
+<ol>
+<li><strong>Surrogate keys</strong> <code>entry_id</code>, <code>round_id</code>, <code>person_id</code>: (year, country) is not unique because of 1956, and <code>song</code> is empty in three rows. The natural combination is protected by a UNIQUE constraint.</li>
+<li><strong><code>vote</code> refers to countries, not entries</strong>: votes are cast by a country for a country; the entry is found through the year and the receiving country. This would be ambiguous only in 1956, which has no votes.</li>
+<li><strong><code>total_points</code> is stored</strong> although from 2016 it equals televote plus jury (P26): before 2016 the parts do not exist.</li>
+<li><strong><code>place_contest</code> and <code>performance.points</code> are stored</strong>: the overall place of semi-final entries cannot be derived, and points exist where votes are missing (1956, 2020, 2023 semi-finals).</li>
+<li><strong>Self-vote rows are kept</strong>: removing them would be a filter outside SQL; a CHECK states they can only hold 0 points.</li>
+<li><strong><code>contest</code> has one column</strong>, so that rounds and entries of a year refer to one row and a year can exist before its rounds (Q13).</li>
+</ol>
+<h1>4. Implementation</h1>
+<h2>4.1 Order of execution</h2>
+<p><code>scripts/download_data.py</code> → create the database in pgAdmin → <code>sql/schema.sql</code> → <code>python src/etl/load.py</code> → <code>sql/verify_constraints.sql</code> and <code>sql/indexes.sql</code> → <code>scripts/run_queries.py</code> → <code>streamlit run app/streamlit_app.py</code>. Tools: PostgreSQL 18, pgAdmin 4, Python with psycopg2, SQLAlchemy Core, matplotlib and Streamlit.</p>
+<h2>4.2 Schema</h2>
+<p>The schema is created first; the load only inserts rows. Types follow the profile: years, places and points <code>SMALLINT</code> (maximum 758), country codes <code>VARCHAR(3)</code> (because of <code>wld</code>), text sizes above the longest value found, odds <code>NUMERIC(7,2)</code>, lyrics <code>TEXT</code>.</p>
+<pre><code class="language-sql">CREATE TABLE country (
+    country_code VARCHAR(3)  PRIMARY KEY,
+    name         VARCHAR(50) NOT NULL UNIQUE
+);
+
+CREATE TABLE contest (
+    year SMALLINT PRIMARY KEY CHECK (year &gt;= 1956)
+);
+
+CREATE TABLE round (
+    round_id   INTEGER     PRIMARY KEY,
+    year       SMALLINT    NOT NULL REFERENCES contest (year),
+    round_type VARCHAR(12) NOT NULL
+               CHECK (round_type IN ('final', 'semi-final', 'semi-final-1', 'semi-final-2')),
+    UNIQUE (year, round_type)
+);
+
+CREATE TABLE song_entry (
+    entry_id      INTEGER      PRIMARY KEY,
+    year          SMALLINT     NOT NULL REFERENCES contest (year),
+    country_code  VARCHAR(3)   NOT NULL REFERENCES country (country_code),
+    performer     VARCHAR(100) NOT NULL,
+    song          VARCHAR(100),
+    place_contest SMALLINT     CHECK (place_contest &gt; 0),
+    youtube_url   VARCHAR(100),
+    lyrics        TEXT,
+    UNIQUE (year, country_code, performer, song)
+);
+
+CREATE TABLE performance (
+    entry_id      INTEGER  NOT NULL REFERENCES song_entry (entry_id),
+    round_id      INTEGER  NOT NULL REFERENCES round (round_id),
+    running_order SMALLINT CHECK (running_order &gt; 0),
+    place         SMALLINT CHECK (place &gt; 0),
+    points        SMALLINT CHECK (points &gt;= 0),
+    points_tele   SMALLINT CHECK (points_tele &gt;= 0),
+    points_jury   SMALLINT CHECK (points_jury &gt;= 0),
+    PRIMARY KEY (entry_id, round_id)
+);
+
+CREATE TABLE vote (
+    round_id     INTEGER    NOT NULL REFERENCES round (round_id),
+    from_country VARCHAR(3) NOT NULL REFERENCES country (country_code),
+    to_country   VARCHAR(3) NOT NULL REFERENCES country (country_code),
+    total_points SMALLINT   NOT NULL CHECK (total_points &gt;= 0),
+    tele_points  SMALLINT   CHECK (tele_points &gt;= 0),
+    jury_points  SMALLINT   CHECK (jury_points &gt;= 0),
+    PRIMARY KEY (round_id, from_country, to_country),
+    CHECK (from_country &lt;&gt; to_country OR total_points = 0)
+);
+
+CREATE TABLE person (
+    person_id INTEGER      PRIMARY KEY,
+    name      VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE entry_credit (
+    entry_id  INTEGER     NOT NULL REFERENCES song_entry (entry_id),
+    person_id INTEGER     NOT NULL REFERENCES person (person_id),
+    role      VARCHAR(10) NOT NULL CHECK (role IN ('composer', 'lyricist')),
+    PRIMARY KEY (entry_id, person_id, role)
+);
+
+CREATE TABLE bookmaker (
+    bookmaker_id INTEGER     PRIMARY KEY,
+    name         VARCHAR(50) NOT NULL UNIQUE
+);
+
+CREATE TABLE betting_odds (
+    bookmaker_id INTEGER      NOT NULL REFERENCES bookmaker (bookmaker_id),
+    entry_id     INTEGER      NOT NULL REFERENCES song_entry (entry_id),
+    round_id     INTEGER      NOT NULL REFERENCES round (round_id),
+    odds         NUMERIC(7,2) CHECK (odds &gt;= 1),
+    PRIMARY KEY (bookmaker_id, entry_id, round_id)
+);
+</code></pre>
+<h2>4.3 Load in one transaction</h2>
+<p><code>src/etl/load.py</code> takes the ten cleaned tables from <code>clean.py</code>, checks that the tables are empty, and inserts all of them with <code>execute_values</code> inside one <code>with conn:</code> block. It then compares the rows prepared with <code>COUNT(*)</code> in each table: all ten matched (country 53, contest 68, round 103, song_entry 1,719, performance 2,038, vote 51,354, person 2,916, entry_credit 3,990, bookmaker 33, betting_odds 7,895).</p>
+<p><strong>Rollback.</strong> <code>python src/etl/load.py --fail</code> adds one vote for the non-existent country <code>zz</code>. Five tables were inserted before the error; afterwards every table had 0 rows:</p>
+<pre><code class="language-text">ROLLBACK: nothing was loaded.
+Error: insert or update on table &quot;vote&quot; violates foreign key constraint &quot;vote_to_country_fkey&quot;
+Detail: Key (to_country)=(zz) is not present in table &quot;country&quot;.
+</code></pre>
+<h2>4.4 Constraints verified after loading</h2>
+<table>
+<thead>
+<tr>
+<th>Check in <code>sql/verify_constraints.sql</code></th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PRIMARY KEY, FOREIGN KEY, UNIQUE per table</td>
+<td>21 rows: 10 primary keys, 13 foreign keys, 5 unique</td>
+</tr>
+<tr>
+<td>CHECK constraints with their rule</td>
+<td>14 rows</td>
+</tr>
+<tr>
+<td>NOT NULL columns</td>
+<td>26 rows</td>
+</tr>
+<tr>
+<td>Duplicate country <code>se</code>; vote for <code>zz</code>; second "Sweden"</td>
+<td>Rejected by <code>country_pkey</code>; <code>vote_to_country_fkey</code>; <code>country_name_key</code></td>
+</tr>
+<tr>
+<td>Entry without performer; vote of -3 points; round type <code>heat</code></td>
+<td>Rejected by NOT NULL; <code>vote_total_points_check</code>; <code>round_round_type_check</code></td>
+</tr>
+</tbody>
+</table>
+<h2>4.5 Indexes</h2>
+<table>
+<thead>
+<tr>
+<th>Query on <code>vote</code></th>
+<th>Plan</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WHERE to_country = 'ad'</code>, no index</td>
+<td>Seq Scan, 51,161 rows read and discarded</td>
+<td>6.02 ms</td>
+</tr>
+<tr>
+<td>Same, after <code>CREATE INDEX idx_vote_to_country</code></td>
+<td>Bitmap Index Scan, 193 rows</td>
+<td>0.24 ms</td>
+</tr>
+<tr>
+<td><code>WHERE total_points = 0</code> (half the table)</td>
+<td>Seq Scan, index not used</td>
+<td>7.20 ms</td>
+</tr>
+</tbody>
+</table>
+<p>The index made the selective search about 25 times faster; for a condition half the rows meet, the planner correctly keeps the full scan.</p>
+<h1>5. Queries</h1>
+<p>All queries were written by me (Kinga Kerekes). Each is a file in <code>sql/queries/</code> with named parameters that the application binds to its filters; here the example values are written in. Required constructs: joins (Q01 and most others), GROUP BY with HAVING (Q02, Q03, Q04, Q06, Q10, Q12), subquery (Q03, Q13), window functions (Q04, Q05, Q07, Q09, Q11), CTE (Q04 to Q09, Q11), INSERT, UPDATE and DELETE in a transaction (Q13). Vote averages default to 1975 to 2015, when every country gave 1 to 12 points.</p>
+<h2>Q01. Which countries have won the contest most often, and when did each one last win?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q01_wins_by_country.sql</code>. Constructs: JOIN of four tables, GROUP BY, COUNT, MAX.</p>
+<pre><code class="language-sql">SELECT country.name AS country,
+       COUNT(*) AS wins,
+       MAX(song_entry.year) AS last_win
+FROM performance
+JOIN round ON round.round_id = performance.round_id
+JOIN song_entry ON song_entry.entry_id = performance.entry_id
+JOIN country ON country.country_code = song_entry.country_code
+WHERE round.round_type = 'final'
+  AND performance.place = 1
+  AND song_entry.year BETWEEN 1957 AND 2023
+GROUP BY country.country_code, country.name
+ORDER BY wins DESC, last_win DESC;
+</code></pre>
+<p>Result: 27 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>country</th>
+<th>wins</th>
+<th>last_win</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sweden</td>
+<td>7</td>
+<td>2023</td>
+</tr>
+<tr>
+<td>Ireland</td>
+<td>7</td>
+<td>1996</td>
+</tr>
+<tr>
+<td>Netherlands</td>
+<td>5</td>
+<td>2019</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: It ranks the countries by victories within any period, which shows who dominated which era of the contest.</p>
+<h2>Q02. Among the countries with at least a given number of finals, which have the best average place in the final?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q02_best_average_place.sql</code>. Constructs: JOIN, GROUP BY with HAVING, AVG, MIN.</p>
+<pre><code class="language-sql">SELECT country.name AS country,
+       COUNT(*) AS finals,
+       ROUND(AVG(performance.place), 2) AS average_place,
+       MIN(performance.place) AS best_place
+FROM performance
+JOIN round ON round.round_id = performance.round_id
+JOIN song_entry ON song_entry.entry_id = performance.entry_id
+JOIN country ON country.country_code = song_entry.country_code
+WHERE round.round_type = 'final'
+  AND performance.place IS NOT NULL
+GROUP BY country.country_code, country.name
+HAVING COUNT(*) &gt;= 20
+ORDER BY average_place;
+</code></pre>
+<p>Result: 25 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>country</th>
+<th>finals</th>
+<th>average_place</th>
+<th>best_place</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Italy</td>
+<td>47</td>
+<td>7.32</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Monaco</td>
+<td>21</td>
+<td>7.38</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Russia</td>
+<td>22</td>
+<td>7.68</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: An average over many finals measures consistency instead of single victories, and HAVING removes countries with too few finals for the average to mean anything.</p>
+<h2>Q03. Which countries have taken part but never won, and how close did they come?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q03_never_won.sql</code>. Constructs: subquery with NOT IN, JOIN, GROUP BY, aggregates.</p>
+<pre><code class="language-sql">SELECT country.name AS country,
+       COUNT(*) AS entries,
+       MIN(song_entry.year) AS first_year,
+       MIN(song_entry.place_contest) AS best_place
+FROM country
+JOIN song_entry ON song_entry.country_code = country.country_code
+WHERE country.country_code NOT IN (
+    SELECT song_entry.country_code
+    FROM performance
+    JOIN round ON round.round_id = performance.round_id
+    JOIN song_entry ON song_entry.entry_id = performance.entry_id
+    WHERE round.round_type = 'final'
+      AND performance.place = 1
+)
+GROUP BY country.country_code, country.name
+HAVING COUNT(*) &gt;= 10
+ORDER BY entries DESC;
+</code></pre>
+<p>Result: 20 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>country</th>
+<th>entries</th>
+<th>first_year</th>
+<th>best_place</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cyprus</td>
+<td>40</td>
+<td>1981</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Malta</td>
+<td>36</td>
+<td>1971</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Iceland</td>
+<td>36</td>
+<td>1986</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: It separates the countries that are still waiting for a first victory from the winners, and shows how long and how nearly each has tried.</p>
+<h2>Q04. For a chosen country, which countries give it the most points on average in the final?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q04_top_givers.sql</code>. Constructs: two chained CTEs, GROUP BY with HAVING, RANK with PARTITION BY, top N per group.</p>
+<pre><code class="language-sql">WITH pair_average AS (
+    SELECT vote.to_country,
+           vote.from_country,
+           COUNT(*) AS contests,
+           ROUND(AVG(vote.total_points), 2) AS average_points
+    FROM vote
+    JOIN round ON round.round_id = vote.round_id
+    WHERE round.round_type = 'final'
+      AND vote.from_country &lt;&gt; vote.to_country
+      AND round.year BETWEEN 1975 AND 2015
+    GROUP BY vote.to_country, vote.from_country
+    HAVING COUNT(*) &gt;= 10
+),
+ranked AS (
+    SELECT to_country, from_country, contests, average_points,
+           RANK() OVER (
+               PARTITION BY to_country
+               ORDER BY average_points DESC
+           ) AS rank_for_receiver
+    FROM pair_average
+)
+SELECT giver.name AS giver,
+       ranked.contests,
+       ranked.average_points,
+       ranked.rank_for_receiver
+FROM ranked
+JOIN country AS giver ON giver.country_code = ranked.from_country
+WHERE ranked.to_country = 'se'
+  AND ranked.rank_for_receiver &lt;= 5
+ORDER BY ranked.rank_for_receiver, giver.name;
+</code></pre>
+<p>Result: 5 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>giver</th>
+<th>contests</th>
+<th>average_points</th>
+<th>rank_for_receiver</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Denmark</td>
+<td>33</td>
+<td>8.00</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Norway</td>
+<td>38</td>
+<td>7.24</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Estonia</td>
+<td>20</td>
+<td>6.65</td>
+<td>3</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: It reveals the stable voting friends of a country; the period 1975 to 2015 is used because every country then gave the same 1 to 12 points, so the averages are comparable.</p>
+<h2>Q05. How did the final place of a country change from each of its finals to the next?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q05_place_over_time.sql</code>. Constructs: two chained CTEs, LAG.</p>
+<pre><code class="language-sql">WITH finals AS (
+    SELECT song_entry.year,
+           song_entry.performer,
+           performance.place
+    FROM performance
+    JOIN round ON round.round_id = performance.round_id
+    JOIN song_entry ON song_entry.entry_id = performance.entry_id
+    WHERE round.round_type = 'final'
+      AND performance.place IS NOT NULL
+      AND song_entry.country_code = 'se'
+),
+with_previous AS (
+    SELECT year, performer, place,
+           LAG(place) OVER (ORDER BY year) AS previous_place
+    FROM finals
+)
+SELECT year, performer, place, previous_place,
+       previous_place - place AS places_gained
+FROM with_previous
+ORDER BY year;
+</code></pre>
+<p>Result: 61 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>year</th>
+<th>performer</th>
+<th>place</th>
+<th>previous_place</th>
+<th>places_gained</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1958</td>
+<td>Alice Babs</td>
+<td>4</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>1959</td>
+<td>Brita Borg</td>
+<td>9</td>
+<td>4</td>
+<td>-5</td>
+</tr>
+<tr>
+<td>1960</td>
+<td>Siw Malmkvist</td>
+<td>10</td>
+<td>9</td>
+<td>-1</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: The difference with the previous final shows the rises and falls of a country over the years, which a list of places alone hides.</p>
+<h2>Q06. Which pairs of countries give each other high points in both directions?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q06_mutual_voting.sql</code>. Constructs: CTE joined with itself, GROUP BY with HAVING.</p>
+<pre><code class="language-sql">WITH pair_average AS (
+    SELECT vote.from_country,
+           vote.to_country,
+           COUNT(*) AS contests,
+           ROUND(AVG(vote.total_points), 2) AS average_points
+    FROM vote
+    JOIN round ON round.round_id = vote.round_id
+    WHERE round.round_type = 'final'
+      AND vote.from_country &lt;&gt; vote.to_country
+      AND round.year BETWEEN 1975 AND 2015
+    GROUP BY vote.from_country, vote.to_country
+    HAVING COUNT(*) &gt;= 10
+)
+SELECT first_country.name AS country_a,
+       second_country.name AS country_b,
+       a_to_b.average_points AS a_gives_b,
+       b_to_a.average_points AS b_gives_a,
+       a_to_b.contests AS contests
+FROM pair_average AS a_to_b
+JOIN pair_average AS b_to_a
+  ON b_to_a.from_country = a_to_b.to_country
+ AND b_to_a.to_country = a_to_b.from_country
+JOIN country AS first_country ON first_country.country_code = a_to_b.from_country
+JOIN country AS second_country ON second_country.country_code = a_to_b.to_country
+WHERE a_to_b.from_country &lt; a_to_b.to_country
+  AND a_to_b.average_points &gt;= 6
+  AND b_to_a.average_points &gt;= 6
+ORDER BY a_to_b.average_points + b_to_a.average_points DESC;
+</code></pre>
+<p>Result: 3 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>country_a</th>
+<th>country_b</th>
+<th>a_gives_b</th>
+<th>b_gives_a</th>
+<th>contests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cyprus</td>
+<td>Greece</td>
+<td>11.11</td>
+<td>10.24</td>
+<td>27</td>
+</tr>
+<tr>
+<td>Russia</td>
+<td>Ukraine</td>
+<td>6.92</td>
+<td>8.67</td>
+<td>12</td>
+</tr>
+<tr>
+<td>Bosnia &amp; Herzegovina</td>
+<td>Croatia</td>
+<td>7.21</td>
+<td>8.00</td>
+<td>14</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: A high average in both directions over many contests is the pattern known as bloc voting, which a single generous vote cannot produce.</p>
+<h2>Q07. In the finals since 2016, how did the televote rank and the jury rank of each entry differ?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q07_jury_vs_televote.sql</code>. Constructs: JOIN, two RANK window functions with PARTITION BY, arithmetic.</p>
+<pre><code class="language-sql">WITH ranked AS (
+    SELECT song_entry.year,
+           country.name AS country,
+           song_entry.performer,
+           performance.points_tele,
+           performance.points_jury,
+           RANK() OVER (
+               PARTITION BY song_entry.year
+               ORDER BY performance.points_tele DESC
+           ) AS tele_rank,
+           RANK() OVER (
+               PARTITION BY song_entry.year
+               ORDER BY performance.points_jury DESC
+           ) AS jury_rank
+    FROM performance
+    JOIN round ON round.round_id = performance.round_id
+    JOIN song_entry ON song_entry.entry_id = performance.entry_id
+    JOIN country ON country.country_code = song_entry.country_code
+    WHERE round.round_type = 'final'
+      AND performance.points_tele IS NOT NULL
+      AND performance.points_jury IS NOT NULL
+      AND song_entry.year BETWEEN 2016 AND 2023
+)
+SELECT year, country, performer, points_tele, points_jury,
+       tele_rank, jury_rank,
+       jury_rank - tele_rank AS public_favoured_by
+FROM ranked
+WHERE jury_rank - tele_rank &gt;= 15
+   OR tele_rank - jury_rank &gt;= 15
+ORDER BY year, tele_rank;
+</code></pre>
+<p>Result: 16 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>year</th>
+<th>country</th>
+<th>performer</th>
+<th>points_tele</th>
+<th>points_jury</th>
+<th>tele_rank</th>
+<th>jury_rank</th>
+<th>public_favoured_by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2016</td>
+<td>Poland</td>
+<td>Michał Szpak</td>
+<td>222</td>
+<td>7</td>
+<td>3</td>
+<td>25</td>
+<td>22</td>
+</tr>
+<tr>
+<td>2016</td>
+<td>Austria</td>
+<td>Zoë</td>
+<td>120</td>
+<td>31</td>
+<td>8</td>
+<td>24</td>
+<td>16</td>
+</tr>
+<tr>
+<td>2016</td>
+<td>Malta</td>
+<td>Ira Losco</td>
+<td>16</td>
+<td>137</td>
+<td>21</td>
+<td>4</td>
+<td>-17</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: Ranking each entry twice inside its own year shows which songs the public loved and the juries did not, and the reverse, independent of how many points were available.</p>
+<h2>Q08. Which countries of the database have never appeared in a final, and how many entries did they send?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q08_never_in_a_final.sql</code>. Constructs: CTE, two LEFT JOIN, IS NULL, COUNT(column) after a LEFT JOIN.</p>
+<pre><code class="language-sql">WITH finalists AS (
+    SELECT DISTINCT song_entry.country_code
+    FROM performance
+    JOIN round ON round.round_id = performance.round_id
+    JOIN song_entry ON song_entry.entry_id = performance.entry_id
+    WHERE round.round_type = 'final'
+)
+SELECT country.name AS country,
+       COUNT(song_entry.entry_id) AS entries,
+       MIN(song_entry.year) AS first_year,
+       MAX(song_entry.year) AS last_year
+FROM country
+LEFT JOIN finalists ON finalists.country_code = country.country_code
+LEFT JOIN song_entry ON song_entry.country_code = country.country_code
+WHERE finalists.country_code IS NULL
+GROUP BY country.country_code, country.name
+ORDER BY entries DESC;
+</code></pre>
+<p>Result: 2 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>country</th>
+<th>entries</th>
+<th>first_year</th>
+<th>last_year</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Andorra</td>
+<td>6</td>
+<td>2004</td>
+<td>2009</td>
+</tr>
+<tr>
+<td>Rest of the World</td>
+<td>0</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: The LEFT JOIN keeps the countries without a match, so it finds both the country that always failed in the semi-finals and the voting-only code that never sent a song.</p>
+<h2>Q09. How did the number of top finishes of chosen countries accumulate over the years?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q09_cumulative_top_places.sql</code>. Constructs: CTE, running total with SUM OVER, PARTITION BY and ORDER BY, list parameter with ANY.</p>
+<pre><code class="language-sql">WITH top_finishes AS (
+    SELECT country.name AS country,
+           song_entry.year,
+           COUNT(*) AS top_finishes
+    FROM performance
+    JOIN round ON round.round_id = performance.round_id
+    JOIN song_entry ON song_entry.entry_id = performance.entry_id
+    JOIN country ON country.country_code = song_entry.country_code
+    WHERE round.round_type = 'final'
+      AND performance.place &lt;= 5
+      AND song_entry.country_code = ANY(ARRAY['se', 'ie', 'gb', 'ua'])
+    GROUP BY country.name, song_entry.year
+)
+SELECT country, year,
+       SUM(top_finishes) OVER (
+           PARTITION BY country
+           ORDER BY year
+       ) AS cumulative_top_finishes
+FROM top_finishes
+ORDER BY country, year;
+</code></pre>
+<p>Result: 83 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>country</th>
+<th>year</th>
+<th>cumulative_top_finishes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ireland</td>
+<td>1966</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Ireland</td>
+<td>1967</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Ireland</td>
+<td>1968</td>
+<td>3</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: A running total turns isolated good results into a curve, so periods of success and long droughts of each country become visible and comparable.</p>
+<h2>Q10. Is the position in the running order of the final related to the result?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q10_running_order.sql</code>. Constructs: JOIN, GROUP BY with HAVING, AVG, MIN.</p>
+<pre><code class="language-sql">SELECT performance.running_order,
+       COUNT(*) AS performances,
+       ROUND(AVG(performance.place), 2) AS average_place,
+       MIN(performance.place) AS best_place
+FROM performance
+JOIN round ON round.round_id = performance.round_id
+WHERE round.round_type = 'final'
+  AND performance.place IS NOT NULL
+  AND performance.running_order IS NOT NULL
+  AND round.year BETWEEN 2004 AND 2023
+GROUP BY performance.running_order
+HAVING COUNT(*) &gt;= 10
+ORDER BY performance.running_order;
+</code></pre>
+<p>Result: 26 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>running_order</th>
+<th>performances</th>
+<th>average_place</th>
+<th>best_place</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>19</td>
+<td>15.95</td>
+<td>5</td>
+</tr>
+<tr>
+<td>2</td>
+<td>19</td>
+<td>20.05</td>
+<td>6</td>
+</tr>
+<tr>
+<td>3</td>
+<td>19</td>
+<td>13.63</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: If the order did not matter the average place would be the same for every position; a better average for late positions supports the common belief that performing late helps.</p>
+<h2>Q11. How well did the bookmakers predict the final: where did their favourites finish?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q11_bookmakers.sql</code>. Constructs: two chained CTEs, AVG, RANK with PARTITION BY, JOIN of five tables.</p>
+<pre><code class="language-sql">WITH average_odds AS (
+    SELECT betting_odds.entry_id,
+           betting_odds.round_id,
+           COUNT(betting_odds.odds) AS bookmakers,
+           ROUND(AVG(betting_odds.odds), 2) AS average_odds
+    FROM betting_odds
+    JOIN round ON round.round_id = betting_odds.round_id
+    WHERE round.round_type = 'final'
+      AND round.year BETWEEN 2015 AND 2023
+    GROUP BY betting_odds.entry_id, betting_odds.round_id
+),
+ranked AS (
+    SELECT entry_id, round_id, bookmakers, average_odds,
+           RANK() OVER (
+               PARTITION BY round_id
+               ORDER BY average_odds
+           ) AS odds_rank
+    FROM average_odds
+)
+SELECT song_entry.year,
+       country.name AS country,
+       song_entry.performer,
+       ranked.bookmakers,
+       ranked.average_odds,
+       ranked.odds_rank,
+       performance.place AS real_place
+FROM ranked
+JOIN performance ON performance.entry_id = ranked.entry_id
+                AND performance.round_id = ranked.round_id
+JOIN song_entry ON song_entry.entry_id = ranked.entry_id
+JOIN country ON country.country_code = song_entry.country_code
+WHERE performance.place IS NOT NULL
+  AND ranked.odds_rank &lt;= 3
+ORDER BY song_entry.year, ranked.odds_rank;
+</code></pre>
+<p>Result: 24 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>year</th>
+<th>country</th>
+<th>performer</th>
+<th>bookmakers</th>
+<th>average_odds</th>
+<th>odds_rank</th>
+<th>real_place</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2015</td>
+<td>Sweden</td>
+<td>Måns Zelmerlöw</td>
+<td>19</td>
+<td>2.08</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>2015</td>
+<td>Russia</td>
+<td>Polina Gagarina</td>
+<td>19</td>
+<td>4.14</td>
+<td>2</td>
+<td>2</td>
+</tr>
+<tr>
+<td>2015</td>
+<td>Italy</td>
+<td>Il Volo</td>
+<td>19</td>
+<td>5.42</td>
+<td>3</td>
+<td>3</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: Comparing the rank given by the average odds with the real place tests whether the betting market is a reliable forecast of the contest.</p>
+<h2>Q12. Which composers have written the most entries, and how did their songs do?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q12_composers.sql</code>. Constructs: JOIN through the N:N table entry_credit, GROUP BY with HAVING, aggregates.</p>
+<pre><code class="language-sql">SELECT person.name AS composer,
+       COUNT(*) AS entries,
+       COUNT(DISTINCT song_entry.country_code) AS countries,
+       MIN(song_entry.year) AS first_year,
+       MAX(song_entry.year) AS last_year,
+       MIN(song_entry.place_contest) AS best_place
+FROM person
+JOIN entry_credit ON entry_credit.person_id = person.person_id
+JOIN song_entry ON song_entry.entry_id = entry_credit.entry_id
+WHERE entry_credit.role = 'composer'
+GROUP BY person.person_id, person.name
+HAVING COUNT(*) &gt;= 6
+ORDER BY entries DESC, best_place;
+</code></pre>
+<p>Result: 12 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>composer</th>
+<th>entries</th>
+<th>countries</th>
+<th>first_year</th>
+<th>last_year</th>
+<th>best_place</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ralph Siegel</td>
+<td>23</td>
+<td>4</td>
+<td>1974</td>
+<td>2017</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Thomas G:son</td>
+<td>15</td>
+<td>7</td>
+<td>2001</td>
+<td>2023</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Dimitris Kontopoulos</td>
+<td>11</td>
+<td>6</td>
+<td>2007</td>
+<td>2021</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: It identifies the professional songwriters behind many entries, often for several countries, who are invisible in a list of performers.</p>
+<h2>Q13. How is a new contest registered so that either all of its rows are saved or none?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q13_new_contest_transaction.sql</code>. Constructs: INSERT, UPDATE and DELETE inside BEGIN ... COMMIT, a failed statement followed by ROLLBACK.</p>
+<pre><code class="language-sql">--
+-- Run each part separately in the pgAdmin Query Tool: select the part and press F5.
+-- The ids 104 and 1720 are the next free ones: the load ends at round 103 and entry 1719.
+-- The 2024 winner is used as the example (source: eurovisionworld.com/eurovision/2024,
+-- checked on 2026-11-15: 591 points, 226 public, 365 jury, running order 21).
+-- Part 3 removes it again, so the database ends exactly as the dataset delivered it.
+
+-- Part 1. Register the 2024 contest, its final, the winning entry and its result.
+BEGIN;
+INSERT INTO contest (year) VALUES (2024);
+INSERT INTO round (round_id, year, round_type) VALUES (104, 2024, 'final');
+INSERT INTO song_entry (entry_id, year, country_code, performer, song, place_contest)
+VALUES (1720, 2024, 'ch', 'Nemo', 'The Code', 1);
+INSERT INTO performance (entry_id, round_id, running_order, place, points, points_tele, points_jury)
+VALUES (1720, 104, 21, 1, 591, 226, 365);
+COMMIT;
+
+-- Check: the four rows are there.
+SELECT song_entry.year, country.name, song_entry.performer, song_entry.song,
+       performance.place, performance.points
+FROM performance
+JOIN song_entry ON song_entry.entry_id = performance.entry_id
+JOIN country ON country.country_code = song_entry.country_code
+WHERE song_entry.year = 2024;
+
+-- Part 2. A transaction that fails halfway. The UPDATE and the first vote are valid.
+-- The second vote is Switzerland giving itself 12 points, which the CHECK constraint rejects.
+BEGIN;
+UPDATE performance SET running_order = 22 WHERE entry_id = 1720 AND round_id = 104;
+INSERT INTO vote (round_id, from_country, to_country, total_points) VALUES (104, 'se', 'ch', 12);
+INSERT INTO vote (round_id, from_country, to_country, total_points) VALUES (104, 'ch', 'ch', 12);
+COMMIT;
+
+-- After the error PostgreSQL ignores every statement until the transaction ends. End it:
+ROLLBACK;
+
+-- Check: the valid changes were undone too. running_order is still 21 and there are no votes.
+SELECT performance.running_order,
+       (SELECT COUNT(*) FROM vote WHERE round_id = 104) AS votes_in_round_104
+FROM performance
+WHERE entry_id = 1720 AND round_id = 104;
+
+-- Part 3. Remove the 2024 contest again. Children first, because of the foreign keys.
+BEGIN;
+DELETE FROM performance WHERE round_id = 104;
+DELETE FROM song_entry WHERE entry_id = 1720;
+DELETE FROM round WHERE round_id = 104;
+DELETE FROM contest WHERE year = 2024;
+COMMIT;
+
+-- Check: no rows are left for 2024.
+SELECT COUNT(*) AS contests_2024 FROM contest WHERE year = 2024;
+</code></pre>
+<p>Result: run by hand in pgAdmin, one part at a time. Part 1 inserts 4 rows. Part 2 stops with a CHECK violation on <code>vote</code> and, after ROLLBACK, the check shows running_order 21 and 0 votes. Part 3 deletes the 4 rows.</p>
+<p>Why it is meaningful: A contest is only usable when its year, round, entry and result exist together; the transaction guarantees that a failure halfway never leaves a contest without its rows.</p>
+<h2>Q14. In which decades do the lyrics most often contain a given word?</h2>
+<p>Author: Kinga Kerekes. File: <code>sql/queries/q14_word_in_lyrics.sql</code>. Constructs: LEFT JOIN of a table with itself, LIKE with a parameter, COUNT(*) against COUNT(column), GROUP BY on an expression.</p>
+<pre><code class="language-sql">SELECT all_entries.year / 10 * 10 AS decade,
+       COUNT(*) AS entries_with_lyrics,
+       COUNT(matching.entry_id) AS entries_with_word,
+       ROUND(100.0 * COUNT(matching.entry_id) / COUNT(*), 1) AS percent
+FROM song_entry AS all_entries
+LEFT JOIN song_entry AS matching
+       ON matching.entry_id = all_entries.entry_id
+      AND LOWER(matching.lyrics) LIKE '%love%'
+WHERE all_entries.lyrics IS NOT NULL
+GROUP BY all_entries.year / 10 * 10
+ORDER BY decade;
+</code></pre>
+<p>Result: 8 rows. First 3:</p>
+<table>
+<thead>
+<tr>
+<th>decade</th>
+<th>entries_with_lyrics</th>
+<th>entries_with_word</th>
+<th>percent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1950</td>
+<td>43</td>
+<td>4</td>
+<td>9.3</td>
+</tr>
+<tr>
+<td>1960</td>
+<td>163</td>
+<td>16</td>
+<td>9.8</td>
+</tr>
+<tr>
+<td>1970</td>
+<td>176</td>
+<td>30</td>
+<td>17.0</td>
+</tr>
+</tbody>
+</table>
+<p>Why it is meaningful: The share of entries whose lyrics contain a word shows how a theme or a language rose and fell over the decades; the share is used because the number of entries per decade grew a lot.</p>
+<h1>6. Visualization</h1>
+<p>The application (<code>app/streamlit_app.py</code>, look in <code>app/style.py</code>) has five tabs with eight charts and seven tables. It connects through <code>src/db.py</code>, whose <code>run_query(sql, params)</code> sends a query file with SQLAlchemy <code>text()</code> and bound parameters and returns the rows.</p>
+<ul>
+<li><strong>Charts use only SQL results:</strong> each chart draws the returned rows in their order; a chart with several countries (Q09) runs its query once per country. A <em>Data and SQL</em> panel under each chart shows the rows and the query.</li>
+<li><strong>Filters are parameters:</strong> sliders, menus and number boxes send their values as bound parameters; menus and limits come from queries in <code>sql/app/</code>.</li>
+<li><strong>No crashes:</strong> inputs have fixed limits; every query runs inside <code>fetch()</code>, which shows a message on error; empty results are explained.</li>
+<li><strong>No SQL injection:</strong> the only free text, the lyrics search, is sent as a LIKE parameter with <code>%</code> and <code>_</code> escaped.</li>
+</ul>
+<div class="grid">
+<figure><img alt="Header with the headline numbers" src="screenshots/00_header.png" /><figcaption>Header with the headline numbers</figcaption></figure>
+<figure><img alt="Q01 wins per country; filter: years" src="screenshots/card_q01.png" /><figcaption>Q01 wins per country; filter: years</figcaption></figure>
+<figure><img alt="Q05 place over time; filter: country" src="screenshots/card_q05.png" /><figcaption>Q05 place over time; filter: country</figcaption></figure>
+<figure><img alt="Q10 running order; filters: years, minimum finals" src="screenshots/card_q10.png" /><figcaption>Q10 running order; filters: years, minimum finals</figcaption></figure>
+<figure><img alt="Q09 top finishes; filters: countries, top places" src="screenshots/card_q09.png" /><figcaption>Q09 top finishes; filters: countries, top places</figcaption></figure>
+<figure><img alt="Q04 top givers; filters: country, years, number, minimum contests" src="screenshots/card_q04.png" /><figcaption>Q04 top givers; filters: country, years, number, minimum contests</figcaption></figure>
+<figure><img alt="Q06 mutual pairs (table); filters: years, minimum average, minimum contests" src="screenshots/card_q06.png" /><figcaption>Q06 mutual pairs (table); filters: years, minimum average, minimum contests</figcaption></figure>
+<figure><img alt="Q07 public against juries; filters: years, minimum gap" src="screenshots/card_q07.png" /><figcaption>Q07 public against juries; filters: years, minimum gap</figcaption></figure>
+<figure><img alt="Q11 the favourite's place; filter: years" src="screenshots/card_q11.png" /><figcaption>Q11 the favourite's place; filter: years</figcaption></figure>
+<figure><img alt="Q14 word in lyrics; filter: free text" src="screenshots/card_q14.png" /><figcaption>Q14 word in lyrics; filter: free text</figcaption></figure>
+<figure><img alt="Q12 composers (table); filter: minimum entries" src="screenshots/card_q12.png" /><figcaption>Q12 composers (table); filter: minimum entries</figcaption></figure>
+<figure><img alt="Q02 best average place (table); filter: minimum finals" src="screenshots/card_q02.png" /><figcaption>Q02 best average place (table); filter: minimum finals</figcaption></figure>
+<figure><img alt="Q03 never won (table); filter: minimum entries" src="screenshots/card_q03.png" /><figcaption>Q03 never won (table); filter: minimum entries</figcaption></figure>
+<figure><img alt="Q08 never in a final (table)" src="screenshots/card_q08.png" /><figcaption>Q08 never in a final (table)</figcaption></figure>
+<figure><img alt="Function: Q01 after changing the years to 1997 to 2023" src="screenshots/f1_filter_q01_1997.png" /><figcaption>Function: Q01 after changing the years to 1997 to 2023</figcaption></figure>
+<figure><img alt="Function: the Data and SQL panel of Q10" src="screenshots/f2_data_and_sql_q10.png" /><figcaption>Function: the Data and SQL panel of Q10</figcaption></figure>
+<figure><img alt="Function: Andorra in Q05, an explained empty result" src="screenshots/f3_empty_andorra.png" /><figcaption>Function: Andorra in Q05, an explained empty result</figcaption></figure>
+<figure><img alt="Function: the injection attempt ' OR '1'='1 is searched as text and found nowhere" src="screenshots/f4_injection_q14.png" /><figcaption>Function: the injection attempt ' OR '1'='1 is searched as text and found nowhere</figcaption></figure>
+</div>
+<h1>7. AI adoption report</h1>
+<p>I used Claude (Anthropic) throughout the project.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Tool</th>
+<th>What the AI produced</th>
+<th>How I checked it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Project plan</td>
+<td>Claude</td>
+<td>A plan mapping each requirement to the course sessions, a first schema and a schedule</td>
+<td>Compared with the project description and the course slides; changed it where my decisions differed</td>
+</tr>
+<tr>
+<td>Data cleaning (<code>clean.py</code>)</td>
+<td>Claude</td>
+<td>The cleaning module with its 16 rules and the cleaning log</td>
+<td>Ran it on my machine; row counts reconcile with the input files; each rule is backed by a profiling query I ran in pgAdmin</td>
+</tr>
+<tr>
+<td>Data profile (<code>profiling.sql</code>)</td>
+<td>Claude</td>
+<td>The staging tables, 40 profiling queries and the written profile</td>
+<td>Ran the staging load and seven queries in pgAdmin (P01, P05, P06, P09, P23, P31, P33); every result matched</td>
+</tr>
+<tr>
+<td>Modelling</td>
+<td>Claude</td>
+<td>ER diagram, table diagram, relational model and exceptions</td>
+<td>Reviewed them against the data and asked for changes (<code>entry</code> renamed <code>song_entry</code>); decided the 1956 and self-vote rules</td>
+</tr>
+<tr>
+<td>Schema and load</td>
+<td>Claude</td>
+<td><code>schema.sql</code> and the one-transaction <code>load.py</code> with the rollback demonstration</td>
+<td>Ran both: counts match in all ten tables; the <code>--fail</code> run left every table empty</td>
+</tr>
+<tr>
+<td>Constraints and indexes</td>
+<td>Claude</td>
+<td><code>verify_constraints.sql</code> and <code>indexes.sql</code></td>
+<td>Ran each step in pgAdmin: 21, 14 and 26 rows, six inserts rejected, the plan changed to an index scan</td>
+</tr>
+<tr>
+<td>Queries Q01 to Q14</td>
+<td>Claude</td>
+<td>First versions of the SQL and the meaning sentences</td>
+<td>Ran all queries with the expected row counts; compared results with known facts; the 2024 values in Q13 were checked against eurovisionworld.com; ran Q13 step by step</td>
+</tr>
+<tr>
+<td>Streamlit application</td>
+<td>Claude</td>
+<td>The application, its error handling and its styling after a template I chose</td>
+<td>Used it with normal and invalid input; found a misleading message for Andorra, which was then fixed; tried the injection string</td>
+</tr>
+<tr>
+<td>Report and presentation</td>
+<td>Claude</td>
+<td>Drafts of this report and of the slides</td>
+<td>Read in full and corrected before submission</td>
+</tr>
+</tbody>
+</table></body></html>
