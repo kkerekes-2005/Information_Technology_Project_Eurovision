@@ -100,6 +100,10 @@ h1, h2, h3, .ev-title, .ev-h2 {{
 [data-testid="stTab"][aria-selected="true"] {{ background: {MAGENTA}; border-color: {MAGENTA} !important; }}
 [data-testid="stTab"][aria-selected="true"] p {{ color: {WHITE}; }}
 [data-testid="stTab"]::after, [role="tablist"]::after {{ display: none !important; }}
+[data-baseweb="tab-highlight"], [data-baseweb="tab-border"],
+[role="tablist"] .react-aria-SelectionIndicator {{ display: none !important; }}
+[role="tablist"] {{ overflow: visible !important; scrollbar-width: none !important; }}
+[role="tablist"]::-webkit-scrollbar {{ display: none !important; }}
 
 /* Section cards: containers created with a key that starts with "card" */
 [class*="st-key-card"] {{ background: {CARD}; border-radius: 20px !important;
