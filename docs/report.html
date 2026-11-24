@@ -1212,9 +1212,9 @@ ORDER BY decade;
 </table>
 <p>Why it is meaningful: The share of entries whose lyrics contain a word shows how a theme or a language rose and fell over the decades; the share is used because the number of entries per decade grew a lot.</p>
 <h1>6. Visualization</h1>
-<p>The application (<code>app/streamlit_app.py</code>, look in <code>app/style.py</code>) has five tabs with eight charts and seven tables. It connects through <code>src/db.py</code>, whose <code>run_query(sql, params)</code> sends a query file with SQLAlchemy <code>text()</code> and bound parameters and returns the rows.</p>
+<p>The application (<code>app/streamlit_app.py</code>, look in <code>app/style.py</code>) has five tabs with eight charts and five tables. It connects through <code>src/db.py</code>, whose <code>run_query(sql, params)</code> sends a query file with SQLAlchemy <code>text()</code> and bound parameters and returns the rows.</p>
 <ul>
-<li><strong>Charts use only SQL results:</strong> each chart draws the returned rows in their order; a chart with several countries (Q09) runs its query once per country. A <em>Data and SQL</em> panel under each chart shows the rows and the query.</li>
+<li><strong>Charts use only SQL results:</strong> each chart draws the returned rows in their order; a chart with several countries (Q09) runs its query once per country. A <em>Data and SQL</em> panel under each chart and table shows the rows and the query.</li>
 <li><strong>Filters are parameters:</strong> sliders, menus and number boxes send their values as bound parameters; menus and limits come from queries in <code>sql/app/</code>.</li>
 <li><strong>No crashes:</strong> inputs have fixed limits; every query runs inside <code>fetch()</code>, which shows a message on error; empty results are explained.</li>
 <li><strong>No SQL injection:</strong> the only free text, the lyrics search, is sent as a LIKE parameter with <code>%</code> and <code>_</code> escaped.</li>

@@ -161,9 +161,9 @@ All queries were written by me (Kinga Kerekes). Each is a file in `sql/queries/`
 
 # 6. Visualization
 
-The application (`app/streamlit_app.py`, look in `app/style.py`) has five tabs with eight charts and seven tables. It connects through `src/db.py`, whose `run_query(sql, params)` sends a query file with SQLAlchemy `text()` and bound parameters and returns the rows.
+The application (`app/streamlit_app.py`, look in `app/style.py`) has five tabs with eight charts and five tables. It connects through `src/db.py`, whose `run_query(sql, params)` sends a query file with SQLAlchemy `text()` and bound parameters and returns the rows.
 
-- **Charts use only SQL results:** each chart draws the returned rows in their order; a chart with several countries (Q09) runs its query once per country. A *Data and SQL* panel under each chart shows the rows and the query.
+- **Charts use only SQL results:** each chart draws the returned rows in their order; a chart with several countries (Q09) runs its query once per country. A *Data and SQL* panel under each chart and table shows the rows and the query.
 - **Filters are parameters:** sliders, menus and number boxes send their values as bound parameters; menus and limits come from queries in `sql/app/`.
 - **No crashes:** inputs have fixed limits; every query runs inside `fetch()`, which shows a message on error; empty results are explained.
 - **No SQL injection:** the only free text, the lyrics search, is sent as a LIKE parameter with `%` and `_` escaped.

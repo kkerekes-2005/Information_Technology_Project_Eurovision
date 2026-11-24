@@ -66,6 +66,14 @@ def show_source(name, rows):
         st.code(read_query(name), language="sql")
 
 
+def show_table(name, rows):
+    """A result shown as a table, with the same "Data and SQL" panel as the charts."""
+    st.dataframe(rows, hide_index=True, width="stretch")
+    with st.expander("Data and SQL"):
+        st.caption("The rows are the table above. The query behind them:")
+        st.code(read_query(name), language="sql")
+
+
 def has_rows(rows, empty_message=None):
     """False after an error or for an empty result; an empty result shows a message."""
     if rows is None:
@@ -80,6 +88,15 @@ def has_rows(rows, empty_message=None):
 # ---------------------------------------------------------------------------
 # Chart helpers: they only draw the lists they receive
 # ---------------------------------------------------------------------------
+
+AGREE_GAP = 5  # Q07: ranks at most this far apart count as agreement
+
+
+def ordinal(n):
+    """1 -> 1st, 2 -> 2nd, 3 -> 3rd, 11 -> 11th."""
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
 
 def new_figure(height=4.0):
     fig, ax = plt.subplots(figsize=(9, height))
@@ -150,8 +167,8 @@ def year_range(key, low, high, default_low, default_high):
 # Page
 # ---------------------------------------------------------------------------
 
-tab_results, tab_votes, tab_juries, tab_songs, tab_tables = st.tabs(
-    ["Winners and places", "Voting", "Juries, public and bookmakers", "Songs", "More tables"])
+tab_results, tab_votes, tab_juries, tab_songs, tab_unlucky = st.tabs(
+    ["Winners and places", "Voting", "Juries, public and bookmakers", "Songs", "Unlucky countries"])
 
 # --- Winners and places ----------------------------------------------------
 with tab_results:
@@ -163,6 +180,14 @@ with tab_results:
         if has_rows(rows):
             horizontal_bars([r["country"] for r in rows], [r["wins"] for r in rows], "Wins")
             show_source("q01_wins_by_country", rows)
+
+    with st.container(border=True, key="card_q02"):
+        style.section("Q02", "Best average place in the final",
+                      "Countries with at least the chosen number of finals")
+        min_finals = st.number_input("Minimum finals", 1, 60, 20, key="q02_min")
+        rows = fetch("q02_best_average_place", {"min_finals": min_finals})
+        if has_rows(rows):
+            show_table("q02_best_average_place", rows)
 
     with st.container(border=True, key="card_q05"):
         style.section("Q05", "How did a country's place change over time?",
@@ -285,57 +310,97 @@ with tab_votes:
                                            "min_contests": min_contests,
                                            "min_average": min_average})
         if has_rows(rows):
-            st.dataframe(rows, hide_index=True, width="stretch")
-            with st.expander("SQL"):
-                st.code(read_query("q06_mutual_voting"), language="sql")
+            show_table("q06_mutual_voting", rows)
 
 # --- Juries, public and bookmakers ----------------------------------------
 with tab_juries:
     with st.container(border=True, key="card_q07"):
         style.section("Q07", "Did the public and the juries agree?",
                       "Rank with the public against rank with the juries, finals since 2016",
-                      "Each point is one entry. On the dashed diagonal both agree.")
+                      f"Each dot is one entry in one final. Colour shows who ranked it higher; "
+                      f"grey means the two ranks are at most {AGREE_GAP} places apart. "
+                      "The biggest disagreements are named.")
         c1, c2 = st.columns([3, 1])
         with c1:
             year_from, year_to = year_range("q07_years", 2016, LAST_YEAR, 2016, LAST_YEAR)
         with c2:
+            # min_gap is the :min_gap parameter of q07_jury_vs_televote.sql
             min_gap = st.number_input("Minimum difference in rank", 0, 25, 0, key="q07_gap")
         rows = fetch("q07_jury_vs_televote", {"year_from": year_from, "year_to": year_to,
                                               "min_gap": min_gap})
         if has_rows(rows):
-            fig, ax = new_figure(height=5)
-            ax.plot([1, 26], [1, 26], color=MUTED, linewidth=1, linestyle="--")
-            ax.scatter([r["tele_rank"] for r in rows], [r["jury_rank"] for r in rows],
-                       s=42, color=SERIES[2], edgecolors=CARD, linewidths=1.5, zorder=3)
-            ax.invert_xaxis()
-            ax.invert_yaxis()
-            finish(fig, ax, "Rank with the public (televote)", "Rank with the juries",
-                   value_axis="both")
+            fig, ax = new_figure(height=5.5)
+            top = max(max(r["tele_rank"] for r in rows), max(r["jury_rank"] for r in rows), 10)
+            ax.plot([1, top], [1, top], color=MUTED, linewidth=1, linestyle="--", zorder=1)
+            # public_favoured_by = jury_rank - tele_rank, computed in the query
+            groups = [
+                ("Public ranked it higher", SERIES[0],
+                 [r for r in rows if r["public_favoured_by"] > AGREE_GAP]),
+                ("Juries ranked it higher", SERIES[2],
+                 [r for r in rows if r["public_favoured_by"] < -AGREE_GAP]),
+                (f"Both agree (within {AGREE_GAP} places)", MUTED,
+                 [r for r in rows if abs(r["public_favoured_by"]) <= AGREE_GAP]),
+            ]
+            for label, colour, group in groups:
+                if group:
+                    ax.scatter([r["tele_rank"] for r in group], [r["jury_rank"] for r in group],
+                               s=46, color=colour, edgecolors=CARD, linewidths=1.5, zorder=3,
+                               label=f"{label} ({len(group)})")
+            biggest = sorted(rows, key=lambda r: abs(r["public_favoured_by"]), reverse=True)[:5]
+            for r in biggest:
+                if abs(r["public_favoured_by"]) > AGREE_GAP:
+                    ax.annotate(f"{r['country']} {r['year']}", (r["tele_rank"], r["jury_rank"]),
+                                xytext=(6, 4), textcoords="offset points", fontsize=8, color=INK)
+            # extra room beyond rank 1 and the last rank keeps the corner labels off the dots
+            ax.set_xlim(top + 1, -3)
+            ax.set_ylim(top + 3, -2)
+            ticks = [1] + list(range(5, top + 1, 5))
+            ax.set_xticks(ticks)
+            ax.set_yticks(ticks)
+            for x, y, text, ha, va in [(0.98, 0.98, "Both liked it", "right", "top"),
+                                       (0.02, 0.02, "Neither liked it", "left", "bottom"),
+                                       (0.02, 0.98, "Juries' favourite", "left", "top"),
+                                       (0.98, 0.02, "Public's favourite", "right", "bottom")]:
+                ax.text(x, y, text, transform=ax.transAxes, ha=ha, va=va, fontsize=9,
+                        color=MUTED, style="italic")
+            legend = ax.legend(frameon=False, fontsize=9, loc="upper center",
+                               bbox_to_anchor=(0.5, -0.13), ncol=3)
+            for text in legend.get_texts():
+                text.set_color(INK)
+            finish(fig, ax, "Rank with the public (televote), 1 = most points",
+                   "Rank with the juries, 1 = most points", value_axis="both")
             show_source("q07_jury_vs_televote", rows)
 
     with st.container(border=True, key="card_q11"):
         style.section("Q11", "Where did the bookmakers' favourite finish?",
                       "Real place of the entry with the lowest average odds",
+                      "Magenta: the favourite won. Teal: it did not. "
                       "2020 has odds but no final, so it does not appear.")
         year_from, year_to = year_range("q11_years", 2015, LAST_YEAR, 2015, LAST_YEAR)
         rows = fetch("q11_bookmakers", {"year_from": year_from, "year_to": year_to,
                                         "max_odds_rank": 1})
         if has_rows(rows):
+            # One dot per year at the place the favourite reached. The axis is reversed so
+            # that first place is at the top: higher on the chart means a better result.
             fig, ax = new_figure()
             labels = [f"{r['year']}\n{r['country']}" for r in rows]
-            ax.bar(labels, [r["real_place"] for r in rows], color=SERIES[0], width=0.6)
-            for i, r in enumerate(rows):
-                ax.text(i, r["real_place"], str(r["real_place"]), ha="center", va="bottom",
+            places = [r["real_place"] for r in rows]
+            worst = max(places + [3])
+            ax.axhline(1, color=SERIES[0], linewidth=1, linestyle="--", alpha=0.5, zorder=1)
+            for i, place in enumerate(places):
+                won = place == 1
+                ax.plot([i, i], [worst + 0.5, place], color=GRID, linewidth=2, zorder=2)
+                ax.scatter(i, place, s=170, color=SERIES[0] if won else SERIES[2],
+                           edgecolors=CARD, linewidths=2, zorder=3)
+                ax.text(i, place - 0.22, ordinal(place), ha="center", va="bottom",
                         fontsize=9, color=INK)
-            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-            finish(fig, ax, "", "Real place of the favourite (1 = won)")
+            ax.set_xticks(range(len(rows)), labels)
+            ax.set_xlim(-0.6, len(rows) - 0.4)
+            ax.set_ylim(worst + 0.5, 0.3)
+            ax.set_yticks(range(1, worst + 1))
+            ax.set_yticklabels([ordinal(p) for p in range(1, worst + 1)])
+            finish(fig, ax, "", "Real place of the favourite")
             show_source("q11_bookmakers", rows)
-        with st.expander("The top favourites of each year"):
-            max_rank = st.number_input("Favourites per year", 1, 10, 3, key="q11_rank")
-            rows = fetch("q11_bookmakers", {"year_from": year_from, "year_to": year_to,
-                                            "max_odds_rank": max_rank})
-            if has_rows(rows):
-                st.dataframe(rows, hide_index=True, width="stretch")
 
 # --- Songs -------------------------------------------------------------------
 with tab_songs:
@@ -364,29 +429,21 @@ with tab_songs:
         min_entries = st.number_input("Minimum entries", 1, 20, 6, key="q12_min")
         rows = fetch("q12_composers", {"min_entries": min_entries})
         if has_rows(rows):
-            st.dataframe(rows, hide_index=True, width="stretch")
+            show_table("q12_composers", rows)
 
-# --- More tables -------------------------------------------------------------
-with tab_tables:
-    with st.container(border=True, key="card_q02"):
-        style.section("Q02", "Best average place in the final",
-                      "Countries with at least the chosen number of finals")
-        min_finals = st.number_input("Minimum finals", 1, 60, 20, key="q02_min")
-        rows = fetch("q02_best_average_place", {"min_finals": min_finals})
-        if has_rows(rows):
-            st.dataframe(rows, hide_index=True, width="stretch")
-
+# --- Unlucky countries -------------------------------------------------------
+with tab_unlucky:
     with st.container(border=True, key="card_q03"):
         style.section("Q03", "Countries that never won", "And how close they came")
         min_entries = st.number_input("Minimum entries", 1, 60, 10, key="q03_min")
         rows = fetch("q03_never_won", {"min_entries": min_entries})
         if has_rows(rows):
-            st.dataframe(rows, hide_index=True, width="stretch")
+            show_table("q03_never_won", rows)
 
     with st.container(border=True, key="card_q08"):
         style.section("Q08", "Countries never in a final", "Entries sent and years active")
         rows = fetch("q08_never_in_a_final")
         if has_rows(rows):
-            st.dataframe(rows, hide_index=True, width="stretch")
+            show_table("q08_never_in_a_final", rows)
 
 style.footer(f"{AUTHOR} · Project B", SOURCE)

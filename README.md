@@ -15,7 +15,7 @@ Work in progress. Deadline: 25 November 2026.
 | Schema (`sql/schema.sql`) | Done |
 | Load into PostgreSQL | Done: `src/etl/load.py`, one transaction, `--fail` shows the rollback |
 | SQL queries | Done: 14 queries in `sql/queries/`, results in `docs/queries.md` |
-| Visualization app | Done: `app/streamlit_app.py`, 8 charts and 7 tables, every filter a SQL parameter |
+| Visualization app | Done: `app/streamlit_app.py`, 8 charts and 5 tables, every filter a SQL parameter |
 | Presentation | Done: `docs/eurovision-presentation.pptx`, 13 slides |
 | Report | Done: `docs/report.pdf` (built from `docs/report-source.md` by `scripts/build_report.py`) and the editable `docs/report.docx` (`scripts/build_report_docx.py`) |
 
@@ -117,7 +117,7 @@ Both files are run in pgAdmin, one step at a time, after the load.
 streamlit run app/streamlit_app.py
 ```
 
-Opens the Eurovision explorer in the browser: five tabs, eight charts and seven tables, each one the result of a query in `sql/queries/`. Every filter is sent to PostgreSQL as a bound parameter. Each chart has a "Data and SQL" panel with the rows it was drawn from and the query behind it. The app shows a message instead of crashing when the database is not running or a filter returns no rows.
+Opens the Eurovision explorer in the browser: five tabs, eight charts and five tables, each one the result of a query in `sql/queries/`. Every filter is sent to PostgreSQL as a bound parameter. Each chart and table has a "Data and SQL" panel with the rows it was drawn from and the query behind it. The app shows a message instead of crashing when the database is not running or a filter returns no rows.
 
 ### 8. Planned steps
 
